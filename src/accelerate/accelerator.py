@@ -292,6 +292,8 @@ class Accelerator:
         dynamo_plugin: TorchDynamoPlugin | None = None,
         deepspeed_plugins: DeepSpeedPlugin | dict[str, DeepSpeedPlugin] | None = None,
     ):
+
+        print(f"args: {locals()}")
         self.trackers = []
         if project_config is not None:
             self.project_configuration = project_config
@@ -452,14 +454,23 @@ class Accelerator:
             **kwargs,
         )
 
+        print(f"***** self.state.mixed_precision: {self.state.mixed_precision}")
+        print(f"***** mixed_precision parameter: {mixed_precision}")
         self.fp8_enabled = self.state.mixed_precision == "fp8" or mixed_precision == "fp8"
 
         # Check for automatic FP8 recipe creation
+        print(f"***** self.fp8_enabled: {self.fp8_enabled}")
+        print(f"***** self.has_fp8_handler: {self.has_fp8_handler}")
         if self.fp8_enabled and not self.has_fp8_handler:
+            print(f"***** Checking FP8 backends...")
+            print(f"***** is_torchao_available(): {is_torchao_available()}")
+            print(f"***** is_transformer_engine_available(): {is_transformer_engine_available()}")
+            print(f"***** is_msamp_available(): {is_msamp_available()}")
             # Prioritize AO -> TE -> MSAMP
             if is_torchao_available():
                 logger.info("Found `torchao` installed, using it for FP8 training.")
                 self.ao_recipe_handler = AORecipeKwargs()
+                print(f"***** Created AO recipe handler: {self.ao_recipe_handler}")
             elif is_transformer_engine_available():
                 logger.info("Found `transformer-engine` installed, using it for FP8 training.")
                 self.te_recipe_handler = TERecipeKwargs()
@@ -472,6 +483,7 @@ class Accelerator:
                     "Valid backends are: `torchao`, `transformer-engine`, and `msamp`."
                 )
             self.has_fp8_handler = True
+            print(f"***** Set has_fp8_handler = True")
 
         self.delayed_fp8_autocast = False
         if self.has_fp8_handler:

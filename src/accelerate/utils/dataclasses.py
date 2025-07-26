@@ -472,7 +472,7 @@ class ProfileKwargs(KwargsHandler):
             Callable that is called at each step when schedule returns `ProfilerAction.RECORD_AND_SAVE` during the
             profiling.
         record_shapes (`bool`, *optional*, default to `False`):
-            Save information about operator's input shapes.
+            Save information about operator’s input shapes.
         profile_memory (`bool`, *optional*, default to `False`):
             Track tensor memory allocation/deallocation
         with_stack (`bool`, *optional*, default to `False`):
