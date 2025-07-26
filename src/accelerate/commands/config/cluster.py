@@ -751,10 +751,29 @@ def get_cluster_input():
                 fp8_config = {}
                 fp8_config["backend"] = _ask_options(
                     "Which FP8 backend do you want to use?",
-                    ["te", "msamp"],
+                    ["ao", "te", "msamp"],
                     _convert_fp8_backend,
                 )
-                if fp8_config["backend"] == "TE":
+                if fp8_config["backend"] == "AO":
+                    if not is_ao_available():
+                        raise ValueError("TorchAO was selected, but it is not installed on this machine.")
+                    # Add TorchAO-specific configuration options
+                    fp8_config["enable_fsdp_float8_all_gather"] = _ask_field(
+                        "Do you want to enable FSDP float8 all gather? This provides extra memory savings by gathering parameters in fp8 and upcasting after [yes/NO]: ",
+                        _convert_yes_no_to_bool,
+                        default=False,
+                    )
+                    fp8_config["force_recompute_fp8_weight_in_bwd"] = _ask_field(
+                        "Do you want to force recompute fp8 weight in backward pass? This can help with memory usage [yes/NO]: ",
+                        _convert_yes_no_to_bool,
+                        default=False,
+                    )
+                    fp8_config["emulate"] = _ask_field(
+                        "Do you want to emulate fp8 training? This is useful for debugging [yes/NO]: ",
+                        _convert_yes_no_to_bool,
+                        default=False,
+                    )
+                elif fp8_config["backend"] == "TE":
                     if not is_transformer_engine_available():
                         raise ValueError("TransformersEngine was selected, but it is not installed on this machine.")
                     fp8_config["use_autocast_during_eval"] = _ask_field(

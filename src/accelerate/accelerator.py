@@ -1406,6 +1406,7 @@ class Accelerator:
             # 1. grabbing old model parameters
             old_named_params = self._get_named_parameters(*args, drop_refs=False)
 
+        print(f"self.fp8_backend: {self.fp8_backend}")
         if self.distributed_type in [DistributedType.MULTI_CPU, DistributedType.MULTI_XPU, DistributedType.NO]:
             if (
                 is_torch_version("<", "2.7.0")
@@ -1820,6 +1821,7 @@ class Accelerator:
             optimizers = [x for x in args if isinstance(x, torch.optim.Optimizer)]
         for arg in args:
             if isinstance(arg, torch.nn.Module):
+                print(f"***** Preparing AO for model: {arg}")
                 convert_model_to_fp8_ao(
                     arg,
                     config=self.ao_recipe_handler.config,

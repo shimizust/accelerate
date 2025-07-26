@@ -668,8 +668,8 @@ def launch_command_parser(subparsers=None):
     fp8_args.add_argument(
         "--fp8_backend",
         type=str,
-        choices=["te", "msamp"],
-        help="Choose a backend to train with FP8 (te: TransformerEngine, msamp: MS-AMP)",
+        choices=["ao", "te", "msamp"],
+        help="Choose a backend to train with FP8 (ao: TorchAO, te: TransformerEngine, msamp: MS-AMP)",
     )
     fp8_args.add_argument(
         "--fp8_use_autocast_during_eval",

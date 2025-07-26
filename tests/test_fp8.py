@@ -38,6 +38,47 @@ from accelerate.utils import (
     is_torchao_available,
     is_transformer_engine_available,
 )
+from accelerate.utils.dataclasses import FP8BackendType
+
+
+def test_fp8_backend_choices_consistency():
+    """Test that fp8_backend choices are consistent across the codebase."""
+    # Import the launch command parser to get the choices
+    from accelerate.commands.launch import launch_command_parser
+    from accelerate.commands.config.config_utils import _convert_fp8_backend
+    
+    parser = launch_command_parser()
+    fp8_backend_action = None
+    
+    # Find the fp8_backend argument
+    for action in parser._actions:
+        if action.dest == "fp8_backend":
+            fp8_backend_action = action
+            break
+    
+    assert fp8_backend_action is not None, "fp8_backend argument not found in launch parser"
+    
+    # Get the choices from the launch command
+    launch_choices = fp8_backend_action.choices
+    
+    # Get the enum values
+    enum_values = [choice.value for choice in FP8BackendType]
+    
+    # Convert launch choices to uppercase to match enum values
+    launch_choices_upper = [choice.upper() for choice in launch_choices]
+    
+    # Check that all launch choices are in the enum
+    for choice in launch_choices_upper:
+        assert choice in enum_values, f"Launch choice '{choice}' not found in FP8BackendType enum"
+    
+    # Check that all enum values are in launch choices
+    for enum_value in enum_values:
+        assert enum_value in launch_choices_upper, f"Enum value '{enum_value}' not found in launch choices"
+    
+    # Test the conversion function
+    for i, choice in enumerate(launch_choices):
+        converted = _convert_fp8_backend(i)
+        assert converted == choice.upper(), f"Conversion failed for choice '{choice}'"
 
 
 def can_convert_te_model():
@@ -70,6 +111,13 @@ def can_convert_ao_model():
 
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
     assert has_ao_layers(model)
+
+
+class TestFP8BackendChoices(unittest.TestCase):
+    """Test that fp8_backend choices are consistent across the codebase."""
+    
+    def test_fp8_backend_choices_consistency(self):
+        test_fp8_backend_choices_consistency()
 
 
 @run_first
@@ -168,6 +216,9 @@ class TestTorchAO(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Test fp8 backend choices consistency
+    test_fp8_backend_choices_consistency()
+    
     # TE suite
     if is_transformer_engine_available():
         can_convert_te_model()
