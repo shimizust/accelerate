@@ -910,30 +910,42 @@ class AcceleratorState:
             self.deepspeed_plugins = None
             self.use_ipex = None
             self.torch_tp_plugin = torch_tp_plugin
+            
+            # Log initial mixed precision value
+            print(f"Initial mixed_precision parameter: {mixed_precision}")
+            
             mixed_precision = (
                 parse_choice_from_env("ACCELERATE_MIXED_PRECISION", "no")
                 if mixed_precision is None
                 else mixed_precision.lower()
             )
+            
+            # Log mixed precision after env parsing
+            print(f"Mixed precision after env parsing: {mixed_precision}")
+            
             if mixed_precision == "fp8":
+                print("FP8 mixed precision requested, checking availability...")
                 # this is confusing, why is is_fp8_available only checks for library availability ?
                 if not is_fp8_available():
+                    print("FP8 not available - transformer_engine or MS-AMP not installed")
                     raise ValueError(
                         "Using `fp8` precision requires `transformer_engine` or `MS-AMP` to be installed."
                     )
                 elif torch.cuda.is_available() and not check_cuda_fp8_capability():
-                    logger.warning(
+                    print(
                         f"The current device has compute capability of {torch.cuda.get_device_capability()} which is "
                         "insufficient for FP8 mixed precision training (requires a GPU Hopper/Ada Lovelace "
                         "or higher, compute capability of 8.9 or higher). Will use FP16 instead."
                     )
                     mixed_precision = "fp16"
+                    print(f"FP8 downgraded to FP16 due to hardware limitations")
                 elif is_habana_gaudi1():
-                    logger.warning(
+                    print(
                         "The current HPU device is Gaudi1 which does not support FP8 mixed precision training (requires "
                         "Gaudi2 or higher). Will use BF16 instead."
                     )
                     mixed_precision = "bf16"
+                    print(f"FP8 downgraded to BF16 due to HPU limitations")
 
             self.dynamo_plugin = dynamo_plugin
             if not _from_accelerator:
@@ -943,27 +955,35 @@ class AcceleratorState:
                 )
             # deepspeed handles mixed_precision using deepspeed_config
             self._mixed_precision = "no" if self.distributed_type == DistributedType.DEEPSPEED else mixed_precision
+            print(f"Final mixed precision setting: {self._mixed_precision} (distributed_type: {self.distributed_type})")
+            
             if self.distributed_type == DistributedType.XLA and is_torch_xla_available(check_is_tpu=True):
+                print("XLA distributed type detected, configuring BF16 settings...")
                 if mixed_precision == "bf16":
                     if os.environ.get("ACCELERATE_DOWNCAST_BF16"):
                         os.environ["XLA_USE_BF16"] = str(0)
                         os.environ["XLA_DOWNCAST_BF16"] = str(1)
                         self.downcast_bfloat = True
+                        print("XLA BF16 downcast enabled")
                     else:
                         os.environ["XLA_USE_BF16"] = str(1)
                         os.environ["XLA_DOWNCAST_BF16"] = str(0)
                         self.downcast_bfloat = False
+                        print("XLA BF16 upcast enabled")
             elif os.environ.get("ACCELERATE_USE_DEEPSPEED", "false") == "true" and not cpu:
+                print("DeepSpeed distributed type detected")
                 self.distributed_type = DistributedType.DEEPSPEED
                 if not isinstance(deepspeed_plugin, dict):
                     deepspeed_plugin.set_mixed_precision(mixed_precision)
                     deepspeed_plugin.select(_from_accelerator_state=True)
+                    print(f"DeepSpeed plugin mixed precision set to: {mixed_precision}")
                 else:
                     for plugin in deepspeed_plugin.values():
                         plugin.set_mixed_precision(mixed_precision)
                     # The first plugin passed in is always the active one
                     first_plugin = next(iter(deepspeed_plugin.values()))
                     first_plugin.select(_from_accelerator_state=True)
+                    print(f"DeepSpeed multi-plugin mixed precision set to: {mixed_precision}")
                 self.deepspeed_plugins = deepspeed_plugin
             elif self.distributed_type in [
                 DistributedType.MULTI_GPU,
@@ -974,36 +994,47 @@ class AcceleratorState:
                 DistributedType.MULTI_XPU,
                 DistributedType.MULTI_HPU,
             ]:
+                print(f"Multi-device distributed type: {self.distributed_type}")
                 if os.environ.get("ACCELERATE_USE_FSDP", "false") == "true" or fsdp_plugin is not None:
+                    print("FSDP enabled, configuring mixed precision...")
                     self.distributed_type = DistributedType.FSDP
                     if self._mixed_precision != "no":
                         fsdp_plugin.set_mixed_precision(self._mixed_precision)
+                        print(f"FSDP mixed precision set to: {self._mixed_precision}")
                     self.fsdp_plugin = fsdp_plugin
                 if os.environ.get("ACCELERATE_USE_MEGATRON_LM", "false") == "true" and self.distributed_type not in [
                     DistributedType.MULTI_XPU,
                 ]:
+                    print("Megatron-LM enabled, configuring mixed precision...")
                     self.distributed_type = DistributedType.MEGATRON_LM
                     megatron_lm_plugin.set_mixed_precision(self._mixed_precision)
+                    print(f"Megatron-LM mixed precision set to: {self._mixed_precision}")
                     self.megatron_lm_plugin = megatron_lm_plugin
                 if self.torch_tp_plugin is not None:
+                    print("Tensor Parallel enabled")
                     self.distributed_type = DistributedType.TP
             elif self.distributed_type in [DistributedType.MULTI_CPU, DistributedType.MULTI_XPU, DistributedType.NO]:
+                print(f"CPU/XPU/NO distributed type: {self.distributed_type}")
                 if is_ipex_available():
                     # check if user disables it explicitly
                     self.use_ipex = parse_flag_from_env("ACCELERATE_USE_IPEX", default=True)
+                    print(f"IPEX availability: {is_ipex_available()}, use_ipex: {self.use_ipex}")
                 else:
                     self.use_ipex = False
+                    print("IPEX not available")
             if (
                 self.dynamo_plugin.backend != DynamoBackend.NO
                 and self._mixed_precision == "no"
                 and self.device.type == "cuda"
             ):
+                print("Enabling TF32 for CUDA with Dynamo and no mixed precision")
                 torch.backends.cuda.matmul.allow_tf32 = True
             if (
                 self.dynamo_plugin.backend != DynamoBackend.NO
                 and self._mixed_precision == "no"
                 and self.device.type == "musa"
             ):
+                print("Enabling TF32 for MUSA with Dynamo and no mixed precision")
                 torch.backends.musa.matmul.allow_tf32 = True
             PartialState._shared_state["distributed_type"] = self.distributed_type
 

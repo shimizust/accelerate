@@ -301,13 +301,14 @@ class Accelerator:
             self.project_configuration = ProjectConfiguration(project_dir=project_dir)
         if project_dir is not None and self.project_dir is None:
             self.project_configuration.set_directories(project_dir)
+        print(f"***** mixed_precision 1: {mixed_precision}")
         if mixed_precision is not None:
             mixed_precision = str(mixed_precision)
             if mixed_precision not in PrecisionType:
                 raise ValueError(
                     f"Unknown mixed_precision mode: {mixed_precision}. Choose between {PrecisionType.list()}"
                 )
-
+        print(f"***** mixed_precision 2: {mixed_precision}")
         if dynamo_plugin is not None and dynamo_backend is not None:
             raise ValueError("You cannot pass in both `dynamo_plugin` and `dynamo_backend`, please only pass in one.")
         if dynamo_backend is not None:
@@ -442,6 +443,10 @@ class Accelerator:
                     self.has_fp8_handler = True
 
         kwargs = self.init_handler.to_kwargs() if self.init_handler is not None else {}
+
+        # TODO: This is a hack to force fp8, it is not being parsed from the configs
+        # mixed_precision = "fp8"
+
         self.state = AcceleratorState(
             mixed_precision=mixed_precision,
             cpu=cpu,
@@ -1839,6 +1844,7 @@ class Accelerator:
                     config=self.ao_recipe_handler.config,
                     module_filter_func=self.ao_recipe_handler.module_filter_func,
                 )
+                print(f"***** Model converted to FP8: {arg}")
 
         # Invariant: with FSDP2, optimizer is always passed to `prepare()` together with model
         # We only precompute scales if float8 all gather is enabled, possibly can add a flag for this later

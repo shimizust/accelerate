@@ -19,12 +19,16 @@ This example demonstrates how to use torchao's Float8LinearConfig with Accelerat
 
 import argparse
 import time
+import os
 
 import torch
 from datasets import Dataset, load_dataset
 from torch.utils.data import DataLoader
 from torchao.float8 import Float8LinearConfig
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+# Add profiling imports
+from torch.profiler import profile, record_function, ProfilerActivity
 
 from accelerate import Accelerator
 from accelerate.utils import AORecipeKwargs, FullyShardedDataParallelPlugin, TorchDynamoPlugin, set_seed
@@ -42,6 +46,11 @@ def parse_args():
     parser.add_argument("--num-steps", type=int, default=1000, help="Number of steps to train for")
     parser.add_argument("--precision", type=str, default="fp8", choices=["fp8", "bf16"], help="Precision to train in")
     parser.add_argument("--log-with", type=str, default="wandb", help="Log with wandb or tensorboard")
+    
+    # Add profiling arguments
+    parser.add_argument("--enable-profiling", action="store_true", help="Enable PyTorch profiler")
+    parser.add_argument("--profile-output-dir", type=str, default="profiling_output", help="Directory to save profiling results")
+    parser.add_argument("--profile-active", type=int, default=3, help="Steps to actively profile")
 
     return parser.parse_args()
 
@@ -198,6 +207,27 @@ def main():
 
     model.train()
 
+    # Initialize profiler if enabled
+    profiler = None
+    if args.enable_profiling:
+        os.makedirs(args.profile_output_dir, exist_ok=True)
+        profiler = profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            schedule=torch.profiler.schedule(
+                wait=1,
+                warmup=1,
+                active=args.profile_active,
+                repeat=1
+            ),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                args.profile_output_dir
+            ),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True
+        )
+        accelerator.print(f"Profiler initialized. Output directory: {args.profile_output_dir}")
+
     total_num_steps = min(args.num_steps, len(dataloader))
     num_tokens = 0
     is_in_warmup = True
@@ -215,12 +245,21 @@ def main():
         if step >= total_num_steps:
             break
 
-        outputs = model(**batch)
-        loss = outputs.loss
+        # Start profiling if enabled
+        if profiler and not is_in_warmup:
+            profiler.start()
 
-        accelerator.backward(loss)
-        optimizer.step()
-        optimizer.zero_grad()
+        with record_function("training_step"):
+            outputs = model(**batch)
+            loss = outputs.loss
+
+            accelerator.backward(loss)
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # Stop profiling if enabled
+        if profiler and not is_in_warmup:
+            profiler.step()
 
         steps_from_warmup = step - WARMUP_STEPS
         print_msg = f"Step {step}/{total_num_steps}, Loss: {loss.item():.4f}"
@@ -248,6 +287,11 @@ def main():
             accelerator.print(print_msg)
 
         accelerator.log(metrics)
+
+    # Stop profiler if enabled
+    if profiler:
+        profiler.stop()
+        accelerator.print(f"Profiling completed. Results saved to {args.profile_output_dir}")
 
     accelerator.wait_for_everyone()
     accelerator.end_training()
